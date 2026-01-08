@@ -96,41 +96,32 @@ jobs:
         run: |
           TAG="${{ steps.env.outputs.TAG }}"
 
-          # Read DOI info from output file
-          if [[ -f zenodo_output.json ]]; then
-            CONCEPT_DOI=$(jq -r '.conceptdoi // empty' zenodo_output.json)
-            VERSION_DOI=$(jq -r '.versiondoi // empty' zenodo_output.json)
-            RECORD_URL=$(jq -r '.record_url // empty' zenodo_output.json)
-            CONCEPTRECID=$(jq -r '.conceptrecid // empty' zenodo_output.json)
-
-            # Get existing release body
-            EXISTING_BODY=$(gh release view "$TAG" --json body -q '.body')
-
-            # Append DOI information
-            NEW_BODY="${EXISTING_BODY}
-
----
-
-## Zenodo Archive
-
-"
-            if [[ -n "$CONCEPT_DOI" ]]; then
-              NEW_BODY="${NEW_BODY}- **Concept DOI**: [\`${CONCEPT_DOI}\`](https://doi.org/${CONCEPT_DOI})
-"
-            fi
-            if [[ -n "$VERSION_DOI" ]]; then
-              NEW_BODY="${NEW_BODY}- **Version DOI**: [\`${VERSION_DOI}\`](https://doi.org/${VERSION_DOI})
-"
-            fi
-            if [[ -n "$RECORD_URL" ]]; then
-              NEW_BODY="${NEW_BODY}- **Record URL**: ${RECORD_URL}
-"
-            fi
-            if [[ -n "$CONCEPTRECID" ]]; then
-              NEW_BODY="${NEW_BODY}
-> **Note**: If this is the first release, add repository variable \`ZENODO_CONCEPTRECID=${CONCEPTRECID}\` (or \`ZENODO_SANDBOX_CONCEPTRECID\` for sandbox) for future releases to be linked as new versions.
-"
-            fi
-
-            gh release edit "$TAG" --notes "$NEW_BODY"
+          if [[ ! -f zenodo_output.json ]]; then
+            echo "No zenodo_output.json found, skipping release update"
+            exit 0
           fi
+
+          CONCEPT_DOI=$(jq -r '.conceptdoi // empty' zenodo_output.json)
+          VERSION_DOI=$(jq -r '.versiondoi // empty' zenodo_output.json)
+          RECORD_URL=$(jq -r '.record_url // empty' zenodo_output.json)
+          CONCEPTRECID=$(jq -r '.conceptrecid // empty' zenodo_output.json)
+
+          EXISTING_BODY=$(gh release view "$TAG" --json body -q '.body')
+
+          {
+            echo "$EXISTING_BODY"
+            echo ""
+            echo "---"
+            echo ""
+            echo "## Zenodo Archive"
+            echo ""
+            [[ -n "$CONCEPT_DOI" ]] && echo "- **Concept DOI**: [\`${CONCEPT_DOI}\`](https://doi.org/${CONCEPT_DOI})"
+            [[ -n "$VERSION_DOI" ]] && echo "- **Version DOI**: [\`${VERSION_DOI}\`](https://doi.org/${VERSION_DOI})"
+            [[ -n "$RECORD_URL" ]] && echo "- **Record URL**: ${RECORD_URL}"
+            if [[ -n "$CONCEPTRECID" ]]; then
+              echo ""
+              echo "> **Note**: If this is the first release, add repository variable \`ZENODO_CONCEPTRECID=${CONCEPTRECID}\` (or \`ZENODO_SANDBOX_CONCEPTRECID\` for sandbox) for future releases to be linked as new versions."
+            fi
+          } > new_body.md
+
+          gh release edit "$TAG" --notes-file new_body.md
