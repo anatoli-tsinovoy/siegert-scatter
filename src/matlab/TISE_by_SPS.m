@@ -124,8 +124,9 @@ if mod(l,2) == 0
 else
     pure_real_z = z_l_p(imag(z_l_p)==0);
 end
-z_l_p = [pure_real_z;
-    sort(z_l_p(imag(z_l_p)~=0), 'ComparisonMethod', 'real')];
+complex_z = z_l_p(imag(z_l_p)~=0);
+[~, sort_idx] = sort(real(complex_z));
+z_l_p = [pure_real_z; complex_z(sort_idx)];
 
 if mod(l,2) == 0
     U = [];

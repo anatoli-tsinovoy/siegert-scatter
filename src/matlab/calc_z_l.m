@@ -17,7 +17,7 @@ if real_only
 else
     switch ell
         case 0
-            z_l_p = double.empty(1,0);
+            z_l_p = [];
         case 1
             z_l_p = -1.00000000000000000000000000000;
         case 2
