@@ -1,0 +1,30 @@
+repos:
+  - repo: local
+    hooks:
+      - id: check-lock
+        name: Check Lock
+        entry: uv lock --check
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|uv\.lock)$
+
+      - id: ruff-check
+        name: Ruff Check
+        entry: uvx ruff check --no-fix src
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: ruff-format
+        name: Ruff Format
+        entry: uvx ruff format --check src
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: typecheck
+        name: Type Check
+        entry: uvx ty check src
+        language: system
+        types: [python]
+        pass_filenames: false
