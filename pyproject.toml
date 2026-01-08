@@ -1,6 +1,6 @@
 [project]
 name = "siegert-scatter"
-version = "0.1.0"
+version = "0.2.0"
 description = "Compute 1D and radial (partial-wave) Schrödinger scattering using the Siegert pseudostate (SPS) method, producing S-matrices, cross sections, Wigner time delays, and scattering lengths for user-defined potentials."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -8,7 +8,10 @@ authors = [
     { name = "Anatoli Tsinovoy", email = "anatoli.tsinovoy@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "numpy>=2.4.0",
+    "scipy>=1.16.3",
+]
 keywords = [
     "scattering",
     "quantum mechanics",
@@ -38,8 +41,10 @@ siegert-scatter = "siegert_scatter:main"
 [dependency-groups]
 dev = [
     "pre-commit>=4.0.0",
+    "pytest>=9.0.2",
 ]
 
 [build-system]
 requires = ["uv_build>=0.9.22,<0.10.0"]
 build-backend = "uv_build"
+
