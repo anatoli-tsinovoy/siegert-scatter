@@ -1,0 +1,24 @@
+{
+  "title": "Siegert Scatter",
+  "upload_type": "software",
+  "description": "Compute 1D and radial (partial-wave) Schrödinger scattering using the Siegert pseudostate (SPS) method, producing S-matrices, cross sections, Wigner time delays, and scattering lengths for user-defined potentials.",
+  "creators": [
+    {
+      "name": "Tsinovoy, Anatoli",
+      "orcid": "0000-0002-0246-0524",
+      "affiliation": ""
+    }
+  ],
+  "license": "MIT",
+  "access_right": "open",
+  "keywords": [
+    "scattering",
+    "quantum mechanics",
+    "Siegert pseudostates",
+    "S-matrix",
+    "cross section",
+    "Wigner time delay",
+    "scattering length",
+    "partial-wave expansion"
+  ]
+}

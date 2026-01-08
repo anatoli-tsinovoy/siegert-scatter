@@ -1,0 +1,136 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: ${{ !contains(github.ref_name, '-rc') && 'pypi' || '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up environment variables
+        id: env
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          echo "TAG=${TAG}" >> "$GITHUB_OUTPUT"
+
+          if [[ "$TAG" == *"-rc"* ]]; then
+            echo "IS_RC=true" >> "$GITHUB_OUTPUT"
+            echo "ZENODO_BASE_URL=${{ vars.ZENODO_SANDBOX_BASE_URL }}" >> "$GITHUB_OUTPUT"
+            echo "ZENODO_CONCEPTRECID=${{ vars.ZENODO_SANDBOX_CONCEPTRECID }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "IS_RC=false" >> "$GITHUB_OUTPUT"
+            echo "ZENODO_BASE_URL=${{ vars.ZENODO_BASE_URL }}" >> "$GITHUB_OUTPUT"
+            echo "ZENODO_CONCEPTRECID=${{ vars.ZENODO_CONCEPTRECID }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.6.6"
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Build distributions
+        run: uv build --no-sources
+
+      - name: Smoke test wheel import
+        run: uv run --isolated --no-project --with dist/*.whl -- python -c "import siegert_scatter"
+
+      - name: Publish to PyPI
+        if: steps.env.outputs.IS_RC == 'false'
+        run: uv publish
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.env.outputs.TAG }}"
+          IS_RC="${{ steps.env.outputs.IS_RC }}"
+
+          PRERELEASE_FLAG=""
+          if [[ "$IS_RC" == "true" ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          # Create release if it doesn't exist, or update if it does
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release edit "$TAG" $PRERELEASE_FLAG --title "$TAG"
+          else
+            gh release create "$TAG" $PRERELEASE_FLAG --title "$TAG" --generate-notes
+          fi
+
+          # Upload assets
+          gh release upload "$TAG" dist/*.whl dist/*.tar.gz --clobber
+
+      - name: Publish to Zenodo
+        id: zenodo
+        env:
+          ZENODO_TOKEN: ${{ contains(github.ref_name, '-rc') && secrets.ZENODO_SANDBOX_TOKEN || secrets.ZENODO_TOKEN }}
+          ZENODO_BASE_URL: ${{ steps.env.outputs.ZENODO_BASE_URL }}
+          ZENODO_CONCEPTRECID: ${{ steps.env.outputs.ZENODO_CONCEPTRECID }}
+        run: |
+          uv run --isolated --no-project --with requests scripts/zenodo_publish.py \
+            --base-url "$ZENODO_BASE_URL" \
+            --token "$ZENODO_TOKEN" \
+            --version "${GITHUB_REF_NAME#v}" \
+            --tag "${{ steps.env.outputs.TAG }}" \
+            --repo "anatoli-tsinovoy/siegert-scatter" \
+            ${ZENODO_CONCEPTRECID:+--conceptrecid "$ZENODO_CONCEPTRECID"} \
+            dist/*.whl dist/*.tar.gz
+
+      - name: Update GitHub Release with DOIs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.env.outputs.TAG }}"
+
+          # Read DOI info from output file
+          if [[ -f zenodo_output.json ]]; then
+            CONCEPT_DOI=$(jq -r '.conceptdoi // empty' zenodo_output.json)
+            VERSION_DOI=$(jq -r '.versiondoi // empty' zenodo_output.json)
+            RECORD_URL=$(jq -r '.record_url // empty' zenodo_output.json)
+            CONCEPTRECID=$(jq -r '.conceptrecid // empty' zenodo_output.json)
+
+            # Get existing release body
+            EXISTING_BODY=$(gh release view "$TAG" --json body -q '.body')
+
+            # Append DOI information
+            NEW_BODY="${EXISTING_BODY}
+
+---
+
+## Zenodo Archive
+
+"
+            if [[ -n "$CONCEPT_DOI" ]]; then
+              NEW_BODY="${NEW_BODY}- **Concept DOI**: [\`${CONCEPT_DOI}\`](https://doi.org/${CONCEPT_DOI})
+"
+            fi
+            if [[ -n "$VERSION_DOI" ]]; then
+              NEW_BODY="${NEW_BODY}- **Version DOI**: [\`${VERSION_DOI}\`](https://doi.org/${VERSION_DOI})
+"
+            fi
+            if [[ -n "$RECORD_URL" ]]; then
+              NEW_BODY="${NEW_BODY}- **Record URL**: ${RECORD_URL}
+"
+            fi
+            if [[ -n "$CONCEPTRECID" ]]; then
+              NEW_BODY="${NEW_BODY}
+> **Note**: If this is the first release, add repository variable \`ZENODO_CONCEPTRECID=${CONCEPTRECID}\` (or \`ZENODO_SANDBOX_CONCEPTRECID\` for sandbox) for future releases to be linked as new versions.
+"
+            fi
+
+            gh release edit "$TAG" --notes "$NEW_BODY"
+          fi

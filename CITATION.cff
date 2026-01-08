@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+title: Siegert Scatter
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - family-names: Tsinovoy
+    given-names: Anatoli
+    orcid: https://orcid.org/0000-0002-0246-0524
+    email: anatoli.tsinovoy@gmail.com
+license: MIT
+repository-code: https://github.com/anatoli-tsinovoy/siegert-scatter
+# After first Zenodo production publish, uncomment and set:
+# doi: "10.5281/zenodo.XXXXXXX"
+# url: "https://doi.org/10.5281/zenodo.XXXXXXX"
+keywords:
+  - scattering
+  - quantum mechanics
+  - Siegert pseudostates
+  - S-matrix
+  - cross section
+  - Wigner time delay
+  - scattering length
