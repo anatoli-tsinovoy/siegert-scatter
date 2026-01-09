@@ -27,7 +27,6 @@ Example
 from .bessel_zeros import calc_z_l
 from .cli import main
 from .cross_section import CrossSectionResult, calc_cross_section_by_sps
-from .median_filter import medfilt1
 from .polynomials import j_polynomial
 from .quadrature import get_gaussian_quadrature
 from .tise import TISEResult, tise_by_sps
@@ -39,7 +38,6 @@ __all__ = [
     "get_gaussian_quadrature",
     "j_polynomial",
     "main",
-    "medfilt1",
     "tise_by_sps",
     "TISEResult",
 ]

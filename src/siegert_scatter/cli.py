@@ -166,19 +166,8 @@ def cmd_suite(args: argparse.Namespace) -> int:
             for i, z in enumerate(z_l):
                 print(f"  z_{ell}_{i + 1} = {z.real:.15e} + {z.imag:.15e}i")
 
-    # Test 4: Median filter
-    print("\n=== TEST 4: Median Filter ===")
-    from .median_filter import medfilt1
-
-    x_med = np.array([1, 5, 2, 8, 3, 7, 4, 6, 9, 0], dtype=float)
-    y_med3 = medfilt1(x_med, 3)
-    y_med5 = medfilt1(x_med, 5)
-    print(f"Input: {x_med}")
-    print(f"Output (window=3): {y_med3}")
-    print(f"Output (window=5): {y_med5}")
-
-    # Test 5: TISE Eigenvalue Solver
-    print("\n=== TEST 5: TISE Eigenvalue Solver ===")
+    # Test 4: TISE Eigenvalue Solver
+    print("\n=== TEST 4: TISE Eigenvalue Solver ===")
     LAMBDA_PT = 4
 
     def f_test(x: np.ndarray) -> np.ndarray:
@@ -188,7 +177,7 @@ def cmd_suite(args: argparse.Namespace) -> int:
     result_tise = tise_by_sps(f_test, N_tise, a_tise, l_tise)
     k_n = result_tise.k_n
 
-    print(f"Test 5.1: TISE_by_SPS with N={N_tise}, a={a_tise}, l={l_tise}")
+    print(f"Test 4.1: TISE_by_SPS with N={N_tise}, a={a_tise}, l={l_tise}")
     print(f"Number of eigenvalues: {len(k_n)}")
     sort_idx = np.argsort(np.real(k_n))
     k_n_sorted = k_n[sort_idx]
@@ -206,21 +195,21 @@ def cmd_suite(args: argparse.Namespace) -> int:
         E_b = -(np.abs(kb) ** 2) / 2
         print(f"  k_bound_{i + 1} = {np.imag(kb):.10e}i (E = {E_b:.10e})")
 
-    # Test 5.3: Larger N
+    # Test 4.3: Larger N
     N_tise = 30
     result_tise_30 = tise_by_sps(f_test, N_tise, a_tise, 0)
     k_n_30 = result_tise_30.k_n
     bound_mask_30 = (np.abs(np.real(k_n_30)) < 1e-10) & (np.imag(k_n_30) > 0)
     k_bound_30 = k_n_30[bound_mask_30]
-    print(f"\nTest 5.3: TISE_by_SPS with N={N_tise}, a={a_tise}, l=0")
+    print(f"\nTest 4.3: TISE_by_SPS with N={N_tise}, a={a_tise}, l=0")
     print(f"Number of bound states: {len(k_bound_30)}")
     for i, kb in enumerate(k_bound_30):
         E_b = -(np.abs(kb) ** 2) / 2
         print(f"  E_{i + 1} = {E_b:.10e}")
     print(f"Quadrature points r_i (first 5): {result_tise_30.r_i[:5]}")
 
-    # Test 6: Cross Section
-    print("\n=== TEST 6: Cross Section Calculation ===")
+    # Test 5: Cross Section
+    print("\n=== TEST 5: Cross Section Calculation ===")
     N_cs, a_cs, l_max_cs = 20, 10, 3
     E_vec_test = np.linspace(1e-4, 5, 50)
 
