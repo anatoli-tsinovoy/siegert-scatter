@@ -51,10 +51,10 @@ def _build_resonant_k_grid(
     k_vec_base: np.ndarray,
     k_n_l: list[np.ndarray],
     dGamma: float,
+    dE: float,
+    min_points_per_width: int = 10,
 ) -> np.ndarray:
     """Build k-grid with extra density around narrow resonances.
-
-    Ports the MATLAB adaptive grid logic from calc_cross_section_by_SPS.m.
 
     Parameters
     ----------
@@ -64,6 +64,11 @@ def _build_resonant_k_grid(
         Pole positions for each angular momentum.
     dGamma : float
         Width parameter from dtau.
+    dE : float
+        Energy grid spacing from user input (used to determine local k spacing).
+    min_points_per_width : int, default=10
+        Minimum number of grid points required to resolve a resonance width.
+        Resonances with fewer than this many points get extra grid density.
 
     Returns
     -------
@@ -81,33 +86,38 @@ def _build_resonant_k_grid(
             re_k = np.real(pole)
             im_k = np.imag(pole)
 
-            # Only consider poles with Re(k) > 0 and narrow width |Im(k)| < 0.0422
-            if re_k > 0 and np.abs(im_k) < 0.0422:
-                # Width is max of decay width and intrinsic width
-                width = max(dGamma / re_k if re_k > 0 else 0, np.abs(im_k))
+            # Only consider scattering poles (Re(k) > 0)
+            if re_k > 0:
+                # Local k-spacing at this resonance energy: dk = dE / k
+                dk_local = dE / re_k
 
-                # Build nested linspace segments around resonance
-                # MATLAB uses 19 points per segment (linspace includes endpoints)
-                min_val = re_k - 3 * width
-                far_min_val = re_k - 10 * width
-                super_far_min_val = re_k - 100 * width
-                ultra_far_min_val = re_k - 100 * width  # Same as super in MATLAB
+                # Resonance is "narrow" if width < min_points_per_width * dk_local
+                resonance_width = np.abs(im_k)
+                if resonance_width < min_points_per_width * dk_local:
+                    # Width for grid construction: max of decay width and intrinsic
+                    width = max(dGamma / re_k, resonance_width)
 
-                max_val = re_k + 3 * width
-                far_max_val = re_k + 10 * width
-                super_far_max_val = re_k + 100 * width
-                ultra_far_max_val = re_k + 1000 * width
+                    # Build nested linspace segments around resonance
+                    min_val = re_k - 3 * width
+                    far_min_val = re_k - 10 * width
+                    super_far_min_val = re_k - 100 * width
 
-                k_points.extend(np.linspace(ultra_far_min_val, super_far_min_val, 19))
-                k_points.extend(np.linspace(super_far_min_val, far_min_val, 19))
-                k_points.extend(np.linspace(far_min_val, min_val, 19))
-                k_points.extend(np.linspace(min_val, max_val, 19))
-                k_points.extend(np.linspace(max_val, far_max_val, 19))
-                k_points.extend(np.linspace(far_max_val, super_far_max_val, 19))
-                k_points.extend(np.linspace(super_far_max_val, ultra_far_max_val, 19))
+                    max_val = re_k + 3 * width
+                    far_max_val = re_k + 10 * width
+                    super_far_max_val = re_k + 100 * width
+                    ultra_far_max_val = re_k + 1000 * width
 
-    # Add 2000-point uniform background grid
-    k_points.extend(np.linspace(k_min, k_max, 2000))
+                    k_points.extend(np.linspace(super_far_min_val, far_min_val, 19))
+                    k_points.extend(np.linspace(far_min_val, min_val, 19))
+                    k_points.extend(np.linspace(min_val, max_val, 19))
+                    k_points.extend(np.linspace(max_val, far_max_val, 19))
+                    k_points.extend(np.linspace(far_max_val, super_far_max_val, 19))
+                    k_points.extend(
+                        np.linspace(super_far_max_val, ultra_far_max_val, 19)
+                    )
+
+    # Start with the original input grid, add resonance points
+    k_points.extend(k_vec_base)
 
     # Sort, unique, and crop to original range
     k_vec_out = np.array(k_points)
@@ -188,7 +198,9 @@ def calc_cross_section_by_sps(
     k_vec_base = np.sqrt(2 * E_vec_input)
 
     if adaptive_grid:
-        k_vec = _build_resonant_k_grid(k_vec_base, k_n_l, dGamma)
+        # Compute mean energy spacing for adaptive grid threshold
+        dE = (E_vec_input[-1] - E_vec_input[0]) / max(len(E_vec_input) - 1, 1)
+        k_vec = _build_resonant_k_grid(k_vec_base, k_n_l, dGamma, dE)
         E_vec_used = k_vec**2 / 2
         if verbose:
             print(
