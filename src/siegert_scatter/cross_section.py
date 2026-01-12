@@ -4,7 +4,7 @@ from typing import Callable
 
 import numpy as np
 
-from .tise import TISEResult, tise_by_sps
+from .tise import tise_by_sps
 
 
 class CrossSectionResult:
@@ -63,7 +63,7 @@ def _build_resonant_k_grid(
     k_n_l : list[np.ndarray]
         Pole positions for each angular momentum.
     dGamma : float
-        Width parameter from dtau.
+        Width parameter (natural energy units). Local k-width is dGamma/k.
     dE : float
         Energy grid spacing from user input (used to determine local k spacing).
     min_points_per_width : int, default=10
@@ -127,18 +127,17 @@ def _build_resonant_k_grid(
     return k_vec_out
 
 
-def calc_cross_section_by_sps(
+def calc_cross_section(
     f_x: Callable[[np.ndarray], np.ndarray],
     N: int,
     a: float,
     l_max: int,
     E_vec: np.ndarray,
-    dtau: float = np.inf,
-    V_2: Callable[[np.ndarray], np.ndarray] | None = None,
+    dGamma: float = 0.0,
     verbose: bool = False,
     adaptive_grid: bool = True,
 ) -> CrossSectionResult:
-    """Compute scattering cross sections using Siegert pseudostates.
+    """Compute elastic scattering cross sections using Siegert pseudostates.
 
     Parameters
     ----------
@@ -153,10 +152,10 @@ def calc_cross_section_by_sps(
     E_vec : np.ndarray
         Energies to compute scattering at (a.u.). Defines the range; the actual
         grid may be refined if adaptive_grid=True.
-    dtau : float, default=inf
-        Time delay parameter. If finite, poles are augmented with width.
-    V_2 : callable, optional
-        Perturbation potential (for transition calculations).
+    dGamma : float, default=0.0
+        Width parameter for pole augmentation (natural energy units).
+        Poles are shifted in imaginary direction by dGamma/|k_n|.
+        Caller converts from lifetime: dGamma = t_au * (mu/m_e) / tau_seconds.
     verbose : bool, default=False
         Print progress.
     adaptive_grid : bool, default=True
@@ -174,25 +173,20 @@ def calc_cross_section_by_sps(
     """
     E_vec_input = np.atleast_1d(np.asarray(E_vec, dtype=np.float64))
 
-    # Solve TISE for each l
+    # Solve TISE for each l, only need k_n
     k_n_l: list[np.ndarray] = []
-    tise_results: list[TISEResult] = []
 
     for ell in range(l_max + 1):
         if verbose:
             print(f"l = {ell}")
-        result = tise_by_sps(f_x, N, a, ell, V_2)
+        result = tise_by_sps(f_x, N, a, ell)
         k_n_l.append(result.k_n)
-        tise_results.append(result)
 
     # Compute scattering length from l=0 poles
     # alpha = real(a + sum(1i / k_n_l{1}))
     k_n_0 = k_n_l[0]
     with np.errstate(divide="ignore", invalid="ignore"):
         alpha = np.real(a + np.sum(1j / k_n_0))
-
-    # Width parameter for pole augmentation
-    dGamma = 1.2279e-13 / dtau if np.isfinite(dtau) else 0.0
 
     # Build k vector - either adaptive or from user input
     k_vec_base = np.sqrt(2 * E_vec_input)
@@ -222,8 +216,8 @@ def calc_cross_section_by_sps(
 
         k_n = k_n_l[ell]
 
-        # Augment poles with decay width if dtau is finite
-        if np.isfinite(dtau) and dGamma > 0:
+        # Augment poles with decay width if dGamma > 0
+        if dGamma > 0:
             # k_n_aug = real(k_n) + 1i*(imag(k_n) - (real(k_n)!=0)*dGamma/(|k_n| + (real(k_n)==0)))
             real_mask = np.real(k_n) != 0
             denom = np.abs(k_n) + (~real_mask).astype(float)

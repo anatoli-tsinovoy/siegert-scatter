@@ -13,53 +13,71 @@ from .quadrature import get_gaussian_quadrature
 class TISEResult:
     """Results from TISE_by_SPS solver.
 
+    This is a minimal, usage-agnostic container holding only the fundamental
+    outputs of the eigenvalue problem. Derived quantities (eigenmodes,
+    perturbation theory matrix elements) should be computed elsewhere.
+
     Attributes
     ----------
     k_n : np.ndarray
-        Complex wavenumbers (shape (n_states,)).
+        Complex wavenumbers (poles), shape (2*N + ell,).
     c_ctilde_zeta : np.ndarray
-        Eigenvectors in extended basis.
-    eigenmodes : np.ndarray
-        Eigenmodes at quadrature points r_i.
+        Normalized eigenvectors in extended basis, shape (2*N + ell, 2*N + ell).
+    W : np.ndarray
+        Weight matrix for normalization, shape (2*N + ell, 2*N + ell).
+    f_i_xi : np.ndarray
+        Basis functions at quadrature points, shape (N, N).
+    f_i_a : np.ndarray
+        Basis functions at boundary r=a, shape (N,).
     r_i : np.ndarray
-        Quadrature points (radial coordinates).
+        Quadrature points (radial coordinates), shape (N,).
     z_l_p : np.ndarray
-        Spherical Bessel zeros used.
-    CVC : np.ndarray | None
-        C @ V2_tilde @ C.T (if V_2 provided).
-    Cf : np.ndarray | None
-        C @ f (if V_2 provided).
-    f : np.ndarray | None
-        Boundary function values (if V_2 provided).
-    C : np.ndarray | None
-        Normalized coefficient matrix (if V_2 provided).
-    V2_tilde : np.ndarray | None
-        Perturbation potential matrix (if V_2 provided).
+        Spherical Bessel zeros used, shape (ell,).
+    N : int
+        Number of basis functions.
+    a : float
+        Cutoff radius.
     """
 
     def __init__(
         self,
         k_n: np.ndarray,
         c_ctilde_zeta: np.ndarray,
-        eigenmodes: np.ndarray,
+        W: np.ndarray,
+        f_i_xi: np.ndarray,
+        f_i_a: np.ndarray,
         r_i: np.ndarray,
         z_l_p: np.ndarray,
-        CVC: np.ndarray | None = None,
-        Cf: np.ndarray | None = None,
-        f: np.ndarray | None = None,
-        C: np.ndarray | None = None,
-        V2_tilde: np.ndarray | None = None,
+        N: int,
+        a: float,
     ):
         self.k_n = k_n
         self.c_ctilde_zeta = c_ctilde_zeta
-        self.eigenmodes = eigenmodes
+        self.W = W
+        self.f_i_xi = f_i_xi
+        self.f_i_a = f_i_a
         self.r_i = r_i
         self.z_l_p = z_l_p
-        self.CVC = CVC
-        self.Cf = Cf
-        self.f = f
-        self.C = C
-        self.V2_tilde = V2_tilde
+        self.N = N
+        self.a = a
+
+
+def calc_eigenmodes(result: TISEResult) -> np.ndarray:
+    """Calculate eigenmodes at quadrature points from TISEResult.
+
+    Parameters
+    ----------
+    result : TISEResult
+        Output from tise_by_sps.
+
+    Returns
+    -------
+    np.ndarray
+        Eigenmodes evaluated at r_i, shape (n_states, N).
+    """
+    # C = first N rows of normalized eigenvectors, transposed
+    C = result.c_ctilde_zeta[: result.N, :].T  # shape (n_states, N)
+    return C @ result.f_i_xi  # shape (n_states, N)
 
 
 def tise_by_sps(
@@ -67,7 +85,6 @@ def tise_by_sps(
     N: int,
     a: float,
     ell: int,
-    V_2: Callable[[np.ndarray], np.ndarray] | None = None,
 ) -> TISEResult:
     """Solve the radial TISE using Siegert pseudostates.
 
@@ -81,13 +98,11 @@ def tise_by_sps(
         Cutoff radius (potential assumed zero for r > a).
     ell : int
         Angular momentum quantum number.
-    V_2 : callable, optional
-        Perturbation potential for computing transition matrix elements.
 
     Returns
     -------
     TISEResult
-        Container with eigenvalues, eigenvectors, and auxiliary data.
+        Container with eigenvalues, eigenvectors, and basis data.
     """
 
     # Effective potential including centrifugal term
@@ -222,43 +237,26 @@ def tise_by_sps(
     k_n = -1j * eigenvalues
 
     # Normalize eigenvectors under W
-    c_ctilde_zeta = eigenvectors
-    c_norm_W = np.diag(c_ctilde_zeta.T @ W @ c_ctilde_zeta)
+    c_norm_W = np.diag(eigenvectors.T @ W @ eigenvectors)
 
     # Avoid division by zero
     with np.errstate(divide="ignore", invalid="ignore"):
         norm_factor = np.sqrt(2 * eigenvalues / c_norm_W)
         norm_factor = np.where(np.isfinite(norm_factor), norm_factor, 0)
-    c_ctilde_zeta_normalized = c_ctilde_zeta * norm_factor[None, :]
+    c_ctilde_zeta = eigenvectors * norm_factor[None, :]
 
-    # Compute eigenmodes at quadrature points
+    # Compute basis functions at quadrature points (f_i_xi)
     pi_i_xi = T_n_i.T @ phi_n_xi  # shape (N, N)
     f_i_xi = np.sqrt(2 / a) * ((1 + x_i)[None, :] / (1 + x_i)[:, None]) * pi_i_xi
-    eigenmodes = c_ctilde_zeta_normalized[:N, :].T @ f_i_xi
-
-    # Optional: compute CVC, Cf if V_2 is provided
-    CVC = None
-    Cf = None
-    f = None
-    C = None
-    V2_tilde = None
-
-    if V_2 is not None:
-        V2_tilde = np.diag(V_2(r_i))
-        C = c_ctilde_zeta_normalized[:N, :].T
-        CVC = C @ V2_tilde @ C.T
-        Cf = C @ f_i_a
-        f = f_i_a
 
     return TISEResult(
         k_n=k_n,
         c_ctilde_zeta=c_ctilde_zeta,
-        eigenmodes=eigenmodes,
+        W=W,
+        f_i_xi=f_i_xi,
+        f_i_a=f_i_a,
         r_i=r_i,
         z_l_p=z_l_p,
-        CVC=CVC,
-        Cf=Cf,
-        f=f,
-        C=C,
-        V2_tilde=V2_tilde,
+        N=N,
+        a=a,
     )
