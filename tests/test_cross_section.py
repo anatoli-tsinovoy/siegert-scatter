@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from siegert_scatter import calc_cross_section_by_sps
+from siegert_scatter import calc_cross_section
 
 # Tolerances for numerical comparisons
 RTOL_LOOSE = 1e-4
@@ -24,13 +24,12 @@ class TestCrossSection:
 
     def test_scattering_length(self, poschl_teller):
         """Test scattering length calculation."""
-        result = calc_cross_section_by_sps(
+        result = calc_cross_section(
             poschl_teller,
             N=50,
             a=10,
             l_max=0,
             E_vec=np.array([0.01]),
-            dtau=np.inf,
             adaptive_grid=False,
         )
 
@@ -40,13 +39,12 @@ class TestCrossSection:
     def test_s_matrix_unitarity(self, poschl_teller):
         """S-matrix should be unitary: |S|² = 1."""
         E_vec = np.linspace(0.1, 5, 50)
-        result = calc_cross_section_by_sps(
+        result = calc_cross_section(
             poschl_teller,
             N=50,
             a=10,
             l_max=3,
             E_vec=E_vec,
-            dtau=np.inf,
             adaptive_grid=False,
         )
 
@@ -58,13 +56,12 @@ class TestCrossSection:
     def test_cross_section_positive(self, poschl_teller):
         """Cross sections should be non-negative."""
         E_vec = np.linspace(0.1, 5, 50)
-        result = calc_cross_section_by_sps(
+        result = calc_cross_section(
             poschl_teller,
             N=20,
             a=10,
             l_max=3,
             E_vec=E_vec,
-            dtau=np.inf,
             adaptive_grid=False,
         )
 
@@ -72,13 +69,12 @@ class TestCrossSection:
 
     def test_k_n_l_structure(self, poschl_teller):
         """k_n_l should have one array per l."""
-        result = calc_cross_section_by_sps(
+        result = calc_cross_section(
             poschl_teller,
             N=20,
             a=10,
             l_max=3,
             E_vec=np.array([1.0]),
-            dtau=np.inf,
             adaptive_grid=False,
         )
 
@@ -87,13 +83,12 @@ class TestCrossSection:
     def test_s_matrix_at_low_energy(self, poschl_teller):
         """At very low energy, S_0 should be close to 1."""
         E_vec = np.array([1e-4])
-        result = calc_cross_section_by_sps(
+        result = calc_cross_section(
             poschl_teller,
             N=50,
             a=10,
             l_max=0,
             E_vec=E_vec,
-            dtau=np.inf,
             adaptive_grid=False,
         )
 
@@ -103,13 +98,12 @@ class TestCrossSection:
     def test_partial_wave_ordering(self, poschl_teller):
         """Higher l waves should contribute less at low energy."""
         E_vec = np.array([0.01])
-        result = calc_cross_section_by_sps(
+        result = calc_cross_section(
             poschl_teller,
             N=30,
             a=10,
             l_max=4,
             E_vec=E_vec,
-            dtau=np.inf,
             adaptive_grid=False,
         )
 
@@ -137,11 +131,11 @@ class TestCrossSectionSuite:
 
         E_vec = np.linspace(1e-6, 10, 100)
 
-        result_1 = calc_cross_section_by_sps(
-            V_1, N=50, a=10, l_max=5, E_vec=E_vec, dtau=np.inf, adaptive_grid=False
+        result_1 = calc_cross_section(
+            V_1, N=50, a=10, l_max=5, E_vec=E_vec, adaptive_grid=False
         )
-        result_2 = calc_cross_section_by_sps(
-            V_2, N=50, a=10, l_max=5, E_vec=E_vec, dtau=np.inf, adaptive_grid=False
+        result_2 = calc_cross_section(
+            V_2, N=50, a=10, l_max=5, E_vec=E_vec, adaptive_grid=False
         )
 
         # Scattering lengths should be very similar
@@ -158,8 +152,8 @@ class TestCrossSectionSuite:
             return -10 / np.cosh(r) ** 2
 
         E_vec = np.linspace(0.1, 5, 73)
-        result = calc_cross_section_by_sps(
-            V, N=20, a=10, l_max=3, E_vec=E_vec, dtau=np.inf, adaptive_grid=False
+        result = calc_cross_section(
+            V, N=20, a=10, l_max=3, E_vec=E_vec, adaptive_grid=False
         )
 
         assert result.S_l.shape == (73, 4)
@@ -179,7 +173,7 @@ class TestAdaptiveGrid:
             return -10 / np.cosh(r) ** 2
 
         E_vec = np.linspace(0.1, 5, 10)
-        result = calc_cross_section_by_sps(V, N=30, a=10, l_max=2, E_vec=E_vec)
+        result = calc_cross_section(V, N=30, a=10, l_max=2, E_vec=E_vec)
 
         # E_vec should be expanded (input + resonance points) or unchanged if already dense
         assert len(result.E_vec) >= len(E_vec)
@@ -197,7 +191,7 @@ class TestAdaptiveGrid:
             return -10 / np.cosh(r) ** 2
 
         E_vec = np.linspace(0.5, 3.0, 10)
-        result = calc_cross_section_by_sps(V, N=30, a=10, l_max=2, E_vec=E_vec)
+        result = calc_cross_section(V, N=30, a=10, l_max=2, E_vec=E_vec)
 
         k_min = np.sqrt(2 * E_vec.min())
         k_max = np.sqrt(2 * E_vec.max())
@@ -213,7 +207,7 @@ class TestAdaptiveGrid:
             return -10 / np.cosh(r) ** 2
 
         E_vec = np.linspace(0.1, 5, 73)
-        result = calc_cross_section_by_sps(
+        result = calc_cross_section(
             V, N=20, a=10, l_max=3, E_vec=E_vec, adaptive_grid=False
         )
 
@@ -228,7 +222,7 @@ class TestAdaptiveGrid:
             return -10 / np.cosh(r) ** 2
 
         E_vec = np.linspace(0.1, 5, 10)
-        result = calc_cross_section_by_sps(V, N=30, a=10, l_max=2, E_vec=E_vec)
+        result = calc_cross_section(V, N=30, a=10, l_max=2, E_vec=E_vec)
 
         n_E = len(result.E_vec)
         assert result.S_l.shape == (n_E, 3)
@@ -242,9 +236,7 @@ class TestAdaptiveGrid:
             return -10 / np.cosh(r) ** 2
 
         E_vec = np.linspace(0.1, 5, 10)
-        result = calc_cross_section_by_sps(
-            V, N=50, a=10, l_max=2, E_vec=E_vec, dtau=np.inf
-        )
+        result = calc_cross_section(V, N=50, a=10, l_max=2, E_vec=E_vec)
 
         # |S|² should be 1 for all energies and all l
         for ell in range(3):

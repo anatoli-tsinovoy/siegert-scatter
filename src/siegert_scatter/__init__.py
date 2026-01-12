@@ -12,7 +12,7 @@ using the Siegert pseudostate (SPS) method:
 Example
 -------
 >>> import numpy as np
->>> from siegert_scatter import tise_by_sps, calc_cross_section_by_sps
+>>> from siegert_scatter import tise_by_sps, calc_cross_section
 >>>
 >>> # Define a potential (Pöschl-Teller)
 >>> def V(r):
@@ -20,24 +20,31 @@ Example
 >>>
 >>> # Compute scattering
 >>> E = np.linspace(0.01, 5, 100)
->>> result = calc_cross_section_by_sps(V, N=50, a=10, l_max=3, E_vec=E)
+>>> result = calc_cross_section(V, N=50, a=10, l_max=3, E_vec=E)
 >>> print(f"Scattering length: {result.alpha:.4f}")
 """
 
 from .bessel_zeros import calc_z_l
 from .cli import main
-from .cross_section import CrossSectionResult, calc_cross_section_by_sps
+from .cross_section import CrossSectionResult, calc_cross_section
+from .perturbation import PerturbationResult, calc_perturbation
 from .polynomials import j_polynomial
 from .quadrature import get_gaussian_quadrature
-from .tise import TISEResult, tise_by_sps
+from .tise import TISEResult, calc_eigenmodes, tise_by_sps
+from .units import reduced_mass, tau_to_dGamma
 
 __all__ = [
-    "calc_cross_section_by_sps",
+    "calc_cross_section",
+    "calc_eigenmodes",
+    "calc_perturbation",
     "calc_z_l",
     "CrossSectionResult",
     "get_gaussian_quadrature",
     "j_polynomial",
     "main",
+    "PerturbationResult",
+    "reduced_mass",
+    "tau_to_dGamma",
     "tise_by_sps",
     "TISEResult",
 ]

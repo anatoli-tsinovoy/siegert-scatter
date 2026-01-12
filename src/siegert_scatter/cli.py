@@ -7,7 +7,7 @@ import sys
 import numpy as np
 
 from .bessel_zeros import calc_z_l
-from .cross_section import calc_cross_section_by_sps
+from .cross_section import calc_cross_section
 from .polynomials import j_polynomial
 from .quadrature import get_gaussian_quadrature
 from .tise import tise_by_sps
@@ -88,16 +88,14 @@ def cmd_quick(args: argparse.Namespace) -> int:
         print("Exact: -0.5, -2, -4.5, -8")
 
     # Test 5: Scattering length
-    cs_result = calc_cross_section_by_sps(
-        f_pt_radial, 100, a_pt, 0, np.array([0.01]), np.inf
-    )
+    cs_result = calc_cross_section(f_pt_radial, 100, a_pt, 0, np.array([0.01]))
     print(f"\nScattering length: {cs_result.alpha:.10e}")
     if args.json:
         result["scattering_length"] = cs_result.alpha
 
     # Test 6: S-matrix at E=1
     E_test = np.array([1.0])
-    cs_result_E1 = calc_cross_section_by_sps(f_pt_radial, 100, a_pt, 2, E_test, np.inf)
+    cs_result_E1 = calc_cross_section(f_pt_radial, 100, a_pt, 2, E_test)
 
     print("\nAt E=1:")
     S_0 = cs_result_E1.S_l[0, 0]
@@ -213,9 +211,7 @@ def cmd_suite(args: argparse.Namespace) -> int:
     N_cs, a_cs, l_max_cs = 20, 10, 3
     E_vec_test = np.linspace(1e-4, 5, 50)
 
-    cs_result = calc_cross_section_by_sps(
-        f_test, N_cs, a_cs, l_max_cs, E_vec_test, np.inf
-    )
+    cs_result = calc_cross_section(f_test, N_cs, a_cs, l_max_cs, E_vec_test)
     print(f"\nScattering length (alpha): {cs_result.alpha:.10e}")
 
     E_samples = [0, 9, 24, 49]
@@ -253,9 +249,9 @@ def cmd_suite(args: argparse.Namespace) -> int:
     print(f"Energy grid: {len(E_vec)} points")
 
     print("\nComputing potential 1...")
-    cs1 = calc_cross_section_by_sps(f_x_1, N, a, l_max, E_vec, np.inf)
+    cs1 = calc_cross_section(f_x_1, N, a, l_max, E_vec)
     print("Computing potential 2...")
-    cs2 = calc_cross_section_by_sps(f_x_2, N, a, l_max, E_vec, np.inf)
+    cs2 = calc_cross_section(f_x_2, N, a, l_max, E_vec)
 
     print(f"\nScattering length (alpha_1): {cs1.alpha:.10e}")
     print(f"Scattering length (alpha_2): {cs2.alpha:.10e}")
@@ -320,7 +316,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
     print(f"Parameters: lambda={LAMBDA_PT}, N={N}, a={a}, l_max={l_max}")
     print(f"Energy grid: {len(E_vec)} points from {E_vec[0]:.2e} to {E_vec[-1]:.2e}")
 
-    result = calc_cross_section_by_sps(f_test, N, a, l_max, E_vec, np.inf, verbose=True)
+    result = calc_cross_section(f_test, N, a, l_max, E_vec, verbose=True)
 
     print(f"\nScattering length: {result.alpha:.10e}")
     print(f"Total cross section at E=1: {np.sum(result.sigma_l[500, :]):.10e}")
