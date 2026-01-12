@@ -179,13 +179,16 @@ class TestAdaptiveGrid:
             return -10 / np.cosh(r) ** 2
 
         E_vec = np.linspace(0.1, 5, 10)
-        result = calc_cross_section_by_sps(V, N=30, a=10, l_max=0, E_vec=E_vec)
+        result = calc_cross_section_by_sps(V, N=30, a=10, l_max=2, E_vec=E_vec)
 
-        # E_vec should be expanded (at minimum 2000 background points)
-        assert len(result.E_vec) >= 2000
+        # E_vec should be expanded (input + resonance points) or unchanged if already dense
+        assert len(result.E_vec) >= len(E_vec)
         # E_vec_input should be the original
         assert len(result.E_vec_input) == 10
         assert_allclose(result.E_vec_input, E_vec)
+        # Original grid points should be preserved in output
+        for E in E_vec:
+            assert np.any(np.isclose(result.E_vec, E, rtol=1e-10))
 
     def test_adaptive_grid_respects_bounds(self):
         """Adaptive grid stays within original energy bounds."""

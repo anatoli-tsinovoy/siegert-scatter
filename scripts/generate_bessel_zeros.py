@@ -249,13 +249,17 @@ def generate_module(zeros: dict[int, list[complex]], output_path: Path) -> None:
     lines.append("    ell : int")
     lines.append("        Angular momentum quantum number (0 to max in table).")
     lines.append("    real_only : bool, default=False")
-    lines.append("        If True, return unique real parts and absolute imaginary parts")
+    lines.append(
+        "        If True, return unique real parts and absolute imaginary parts"
+    )
     lines.append("        (for constructing real-valued matrices).")
     lines.append("")
     lines.append("    Returns")
     lines.append("    -------")
     lines.append("    np.ndarray")
-    lines.append("        Complex zeros (shape (ell,) typically), or real array if real_only=True.")
+    lines.append(
+        "        Complex zeros (shape (ell,) typically), or real array if real_only=True."
+    )
     lines.append('    """')
     lines.append("    max_ell = max(_Z_L_P.keys())")
     lines.append("    if ell < 0 or ell > max_ell:")
@@ -282,7 +286,10 @@ def main() -> None:
         description="Generate spherical Hankel zeros lookup table"
     )
     parser.add_argument(
-        "--lmax", type=int, default=60, help="Maximum ℓ to compute (default: 60, >75 may fail)"
+        "--lmax",
+        type=int,
+        default=60,
+        help="Maximum ℓ to compute (default: 60, >75 may fail)",
     )
     parser.add_argument(
         "--digits",
@@ -323,7 +330,9 @@ def main() -> None:
         )
 
     n_workers = args.workers or os.cpu_count() or 1
-    print(f"Computing zeros for ℓ = 0..{args.lmax} at {args.digits} digits ({n_workers} workers)")
+    print(
+        f"Computing zeros for ℓ = 0..{args.lmax} at {args.digits} digits ({n_workers} workers)"
+    )
 
     zeros: dict[int, list[complex]] = {}
     ells = list(range(args.lmax + 1))
@@ -355,10 +364,12 @@ def main() -> None:
                 file=sys.stderr,
             )
             try:
-                alt_path = input("Enter alternative path to save (or press Enter to discard): ").strip()
+                alt_path = input(
+                    "Enter alternative path to save (or press Enter to discard): "
+                ).strip()
             except (EOFError, KeyboardInterrupt):
                 alt_path = ""
-            
+
             if alt_path:
                 args.output = Path(alt_path)
                 print(f"Will save to: {args.output}")
