@@ -101,9 +101,10 @@ def calc_mittag_leffler_coeffs(
 
 
 def augment_poles(k_n: np.ndarray, dGamma: float) -> np.ndarray:
-    """Augment poles with decay width.
+    """Augment scattering poles with decay width.
 
-    k_n_aug = Re(k_n) + i*(Im(k_n) - dGamma/|k_n|)  for Re(k_n) != 0
+    k_n_aug = Re(k_n) + i*(Im(k_n) - dGamma/|k_n|)  for scattering poles only.
+    Bound state poles (Re(k_n) == 0) are left unchanged.
 
     Parameters
     ----------
@@ -120,9 +121,9 @@ def augment_poles(k_n: np.ndarray, dGamma: float) -> np.ndarray:
     if dGamma == 0:
         return k_n.copy()
 
-    real_mask = np.real(k_n) != 0
-    denom = np.abs(k_n) + (~real_mask).astype(float)
-    return np.real(k_n) + 1j * (np.imag(k_n) - real_mask * dGamma / denom)
+    is_scattering = np.real(k_n) != 0
+    im_shift = np.where(is_scattering, dGamma / np.abs(k_n), 0.0)
+    return np.real(k_n) + 1j * (np.imag(k_n) - im_shift)
 
 
 def calc_T_matrix_element(
