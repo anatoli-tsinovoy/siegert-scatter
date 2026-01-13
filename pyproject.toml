@@ -1,7 +1,7 @@
 [project]
 name = "siegert-scatter"
 version = "0.2.0"
-description = "Compute 1D and radial (partial-wave) Schrödinger scattering using the Siegert pseudostate (SPS) method, producing S-matrices, cross sections, Wigner time delays, and scattering lengths for user-defined potentials."
+description = "Compute radial (partial-wave) Schrödinger scattering using the Siegert pseudostate (SPS) method, producing S-matrices, cross sections, Wigner time delays, and scattering lengths for user-defined potentials."
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [
@@ -34,6 +34,8 @@ classifiers = [
 Repository = "https://github.com/anatoli-tsinovoy/siegert-scatter"
 Issues = "https://github.com/anatoli-tsinovoy/siegert-scatter/issues"
 Changelog = "https://github.com/anatoli-tsinovoy/siegert-scatter/releases"
+DOI = "https://doi.org/10.5281/zenodo.18190655"
+Zenodo = "https://doi.org/10.5281/zenodo.18190655"
 
 [project.scripts]
 siegert-scatter = "siegert_scatter:main"

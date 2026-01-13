@@ -1,6 +1,6 @@
 # Siegert Scatter
 
-Compute 1D and radial (partial-wave) Schrödinger scattering using the Siegert pseudostate (SPS) method. This library produces S-matrices, cross sections, Wigner time delays, and scattering lengths for user-defined potentials.
+Compute radial (partial-wave) Schrödinger scattering using the Siegert pseudostate (SPS) method. This library produces S-matrices, cross sections, Wigner time delays, and scattering lengths for user-defined potentials.
 
 ## Installation
 
@@ -20,13 +20,9 @@ import siegert_scatter
 
 If you use this software in your research, please cite it.
 
-### BibTeX
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18190655.svg)](https://doi.org/10.5281/zenodo.18190655)
 
 See the [`CITATION.cff`](CITATION.cff) file for citation metadata compatible with GitHub's citation feature.
-
-### Zenodo DOI
-
-A permanent DOI via Zenodo will be available after the first release.
 
 ## License
 

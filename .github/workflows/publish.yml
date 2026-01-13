@@ -17,6 +17,34 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history to check branch membership
+
+      - name: Validate version consistency
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"  # Strip 'v' prefix
+          PYPROJECT_VERSION=$(sed -n 's/^version = "\([^"]*\)"/\1/p' pyproject.toml)
+          
+          if [[ "$TAG" != "$PYPROJECT_VERSION" ]]; then
+            echo "::error::Tag version ($TAG) does not match pyproject.toml version ($PYPROJECT_VERSION)"
+            exit 1
+          fi
+          echo "✓ Version $TAG matches pyproject.toml"
+
+      - name: Enforce main branch for non-RC releases
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          
+          if [[ "$TAG" != *"-rc"* ]]; then
+            # Check if tagged commit is on main
+            if ! git branch -r --contains HEAD | grep -q 'origin/main'; then
+              echo "::error::Non-RC releases must be tagged on the main branch"
+              exit 1
+            fi
+            echo "✓ Tagged commit is on main branch"
+          else
+            echo "ℹ RC release - branch check skipped"
+          fi
 
       - name: Set up environment variables
         id: env

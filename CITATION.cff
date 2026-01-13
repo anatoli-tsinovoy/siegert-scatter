@@ -9,9 +9,8 @@ authors:
     email: anatoli.tsinovoy@gmail.com
 license: MIT
 repository-code: https://github.com/anatoli-tsinovoy/siegert-scatter
-# After first Zenodo production publish, uncomment and set:
-# doi: "10.5281/zenodo.XXXXXXX"
-# url: "https://doi.org/10.5281/zenodo.XXXXXXX"
+doi: "10.5281/zenodo.18190655"
+url: "https://doi.org/10.5281/zenodo.18190655"
 keywords:
   - scattering
   - quantum mechanics
