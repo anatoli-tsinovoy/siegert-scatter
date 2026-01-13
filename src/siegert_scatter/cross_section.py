@@ -7,25 +7,204 @@ import numpy as np
 from .tise import tise_by_sps
 
 
+def _augment_poles(k_n: np.ndarray, dGamma: float) -> np.ndarray:
+    """Augment scattering poles with decay width.
+
+    k_n_aug = Re(k_n) + i*(Im(k_n) - dGamma/|k_n|)  for scattering poles only.
+    Bound state poles (Re(k_n) == 0) are left unchanged.
+
+    Parameters
+    ----------
+    k_n : np.ndarray
+        Original pole positions.
+    dGamma : float
+        Width parameter (natural energy units).
+
+    Returns
+    -------
+    np.ndarray
+        Augmented poles.
+    """
+    if dGamma <= 0:
+        return k_n
+
+    is_scattering = np.real(k_n) != 0
+    im_shift = np.where(is_scattering, dGamma / np.abs(k_n), 0.0)
+    return np.real(k_n) + 1j * (np.imag(k_n) - im_shift)
+
+
+def _compute_s_matrix_from_poles(
+    k_vec: np.ndarray,
+    k_n: np.ndarray,
+    a: float,
+    prefactor: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Compute S-matrix, cross section, and time delay from poles.
+
+    Parameters
+    ----------
+    k_vec : np.ndarray
+        Wavenumber grid, shape (n_E,).
+    k_n : np.ndarray
+        Pole positions (possibly augmented with decay width).
+    a : float
+        Cutoff radius.
+    prefactor : float
+        Degeneracy factor: (2*l+1) or (2*Jtag+1).
+
+    Returns
+    -------
+    S : np.ndarray
+        S-matrix values, shape (n_E,).
+    sigma : np.ndarray
+        Cross section, shape (n_E,).
+    tau : np.ndarray
+        Time delay, shape (n_E,).
+    """
+    # S-matrix: S(k) = exp(-2i*k*a) * prod((k_n + k) / (k_n - k))
+    S = np.exp(-2j * k_vec * a)
+
+    # Time delay derivative: d_delta/dk
+    d_delta_dk = -a * np.ones_like(k_vec)
+
+    for k_pole in k_n:
+        # S-matrix product
+        S = S * (k_pole + k_vec) / (k_pole - k_vec)
+
+        # Time delay sum term
+        im_k = np.imag(k_pole)
+        re_k = np.real(k_pole)
+        numerator = -im_k * (im_k**2 + k_vec**2 + re_k**2)
+        denominator = (
+            k_vec**4
+            + 2 * k_vec**2 * (im_k - re_k) * (im_k + re_k)
+            + (im_k**2 + re_k**2) ** 2
+        )
+        with np.errstate(divide="ignore", invalid="ignore"):
+            term = numerator / denominator
+            term = np.where(np.isfinite(term), term, 0)
+        d_delta_dk = d_delta_dk + term
+
+    # Cross section: sigma = prefactor * (pi/k^2) * |1 - S|^2
+    with np.errstate(divide="ignore", invalid="ignore"):
+        sigma = prefactor * (np.pi / k_vec**2) * np.abs(1 - S) ** 2
+        sigma = np.where(np.isfinite(sigma), sigma, 0)
+
+    # Time delay: tau = d_delta_dk / k
+    with np.errstate(divide="ignore", invalid="ignore"):
+        tau = d_delta_dk / k_vec
+        tau = np.where(np.isfinite(tau), tau, 0)
+
+    return S, sigma, tau
+
+
+def _solve_and_compute(
+    channels: list[tuple[Callable[[np.ndarray], np.ndarray], int]],
+    N: int,
+    a: float,
+    E_vec_input: np.ndarray,
+    dGamma: float,
+    adaptive_grid: bool,
+    verbose: bool,
+) -> tuple[list[np.ndarray], np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]:
+    """Core solver: TISE + S-matrix for multiple channels.
+
+    Parameters
+    ----------
+    channels : list of (potential, quantum_number) tuples
+        Each channel has a potential function and its l or Jtag value.
+    N : int
+        Number of basis functions.
+    a : float
+        Cutoff radius.
+    E_vec_input : np.ndarray
+        Input energy grid.
+    dGamma : float
+        Width parameter for pole augmentation.
+    adaptive_grid : bool
+        Whether to refine grid around resonances.
+    verbose : bool
+        Print progress.
+
+    Returns
+    -------
+    k_n_list : list[np.ndarray]
+        Poles for each channel.
+    S : np.ndarray
+        S-matrix, shape (n_E, n_channels).
+    sigma : np.ndarray
+        Cross sections, shape (n_E, n_channels).
+    tau : np.ndarray
+        Time delays, shape (n_E, n_channels).
+    E_vec : np.ndarray
+        Energy grid used (may differ from input if adaptive).
+    alpha : float
+        Scattering length from first channel.
+    """
+    n_channels = len(channels)
+
+    # Solve TISE for each channel
+    k_n_list: list[np.ndarray] = []
+    for potential, qn in channels:
+        if verbose:
+            print(f"Solving TISE for qn = {qn}")
+        result = tise_by_sps(potential, N, a, qn)
+        k_n_list.append(result.k_n)
+
+    # Scattering length from first channel
+    with np.errstate(divide="ignore", invalid="ignore"):
+        alpha = np.real(a + np.sum(1j / k_n_list[0]))
+
+    # Build k grid
+    k_vec_base = np.sqrt(2 * E_vec_input)
+    if adaptive_grid:
+        dE = (E_vec_input[-1] - E_vec_input[0]) / max(len(E_vec_input) - 1, 1)
+        k_vec = _build_resonant_k_grid(k_vec_base, k_n_list, dGamma, dE)
+        E_vec = k_vec**2 / 2
+        if verbose:
+            print(f"Adaptive grid: {len(E_vec_input)} -> {len(E_vec)} points")
+    else:
+        k_vec = k_vec_base
+        E_vec = E_vec_input
+
+    # Compute S-matrix for each channel
+    n_E = len(k_vec)
+    S = np.zeros((n_E, n_channels), dtype=np.complex128)
+    sigma = np.zeros((n_E, n_channels), dtype=np.float64)
+    tau = np.zeros((n_E, n_channels), dtype=np.float64)
+
+    for idx, (_, qn) in enumerate(channels):
+        if verbose:
+            print(f"Computing S-matrix for qn = {qn}")
+        k_n_aug = _augment_poles(k_n_list[idx], dGamma)
+        S[:, idx], sigma[:, idx], tau[:, idx] = _compute_s_matrix_from_poles(
+            k_vec, k_n_aug, a, prefactor=2 * qn + 1
+        )
+
+    return k_n_list, S, sigma, tau, E_vec, alpha
+
+
 class CrossSectionResult:
     """Results from cross section calculation.
 
     Attributes
     ----------
     S_l : np.ndarray
-        S-matrix elements, shape (n_E, l_max+1).
+        S-matrix elements, shape (n_E, n_l).
     sigma_l : np.ndarray
-        Partial cross sections, shape (n_E, l_max+1).
+        Partial cross sections, shape (n_E, n_l).
     tau_l : np.ndarray
-        Time delays, shape (n_E, l_max+1).
-    alpha : float
-        Scattering length (l=0).
+        Time delays, shape (n_E, n_l).
     k_n_l : list[np.ndarray]
-        Eigenvalues k_n for each l.
+        Eigenvalues k_n for each angular momentum.
     E_vec : np.ndarray
         Energy grid used for calculations (may differ from input if adaptive).
     E_vec_input : np.ndarray
         Original energy grid provided by user.
+    l_vec : np.ndarray
+        Angular momentum quantum numbers (0, 1, ..., l_max).
+    alpha : float
+        Scattering length (l=0 channel).
     """
 
     def __init__(
@@ -33,18 +212,20 @@ class CrossSectionResult:
         S_l: np.ndarray,
         sigma_l: np.ndarray,
         tau_l: np.ndarray,
-        alpha: float,
         k_n_l: list[np.ndarray],
         E_vec: np.ndarray,
-        E_vec_input: np.ndarray | None = None,
+        E_vec_input: np.ndarray,
+        l_vec: np.ndarray,
+        alpha: float,
     ):
         self.S_l = S_l
         self.sigma_l = sigma_l
         self.tau_l = tau_l
-        self.alpha = alpha
         self.k_n_l = k_n_l
         self.E_vec = E_vec
-        self.E_vec_input = E_vec_input if E_vec_input is not None else E_vec
+        self.E_vec_input = E_vec_input
+        self.l_vec = l_vec
+        self.alpha = alpha
 
 
 def _build_resonant_k_grid(
@@ -173,102 +354,20 @@ def calc_cross_section(
     """
     E_vec_input = np.atleast_1d(np.asarray(E_vec, dtype=np.float64))
 
-    # Solve TISE for each l, only need k_n
-    k_n_l: list[np.ndarray] = []
+    # Build channel list: same potential for all l
+    channels = [(f_x, ell) for ell in range(l_max + 1)]
 
-    for ell in range(l_max + 1):
-        if verbose:
-            print(f"l = {ell}")
-        result = tise_by_sps(f_x, N, a, ell)
-        k_n_l.append(result.k_n)
-
-    # Compute scattering length from l=0 poles
-    # alpha = real(a + sum(1i / k_n_l{1}))
-    k_n_0 = k_n_l[0]
-    with np.errstate(divide="ignore", invalid="ignore"):
-        alpha = np.real(a + np.sum(1j / k_n_0))
-
-    # Build k vector - either adaptive or from user input
-    k_vec_base = np.sqrt(2 * E_vec_input)
-
-    if adaptive_grid:
-        # Compute mean energy spacing for adaptive grid threshold
-        dE = (E_vec_input[-1] - E_vec_input[0]) / max(len(E_vec_input) - 1, 1)
-        k_vec = _build_resonant_k_grid(k_vec_base, k_n_l, dGamma, dE)
-        E_vec_used = k_vec**2 / 2
-        if verbose:
-            print(
-                f"Adaptive grid: {len(E_vec_input)} input points -> "
-                f"{len(E_vec_used)} output points"
-            )
-    else:
-        k_vec = k_vec_base
-        E_vec_used = E_vec_input
-
-    n_E = len(k_vec)
-    S_l = np.zeros((n_E, l_max + 1), dtype=np.complex128)
-    sigma_l = np.zeros((n_E, l_max + 1), dtype=np.float64)
-    tau_l = np.zeros((n_E, l_max + 1), dtype=np.float64)
-
-    for ell in range(l_max + 1):
-        if verbose:
-            print(f"Computing S-matrix for l = {ell}")
-
-        k_n = k_n_l[ell]
-
-        # Augment poles with decay width if dGamma > 0
-        if dGamma > 0:
-            # k_n_aug = real(k_n) + 1i*(imag(k_n) - (real(k_n)!=0)*dGamma/(|k_n| + (real(k_n)==0)))
-            real_mask = np.real(k_n) != 0
-            denom = np.abs(k_n) + (~real_mask).astype(float)
-            k_n_aug = np.real(k_n) + 1j * (np.imag(k_n) - real_mask * dGamma / denom)
-        else:
-            k_n_aug = k_n
-
-        # S-matrix: S_l(k) = exp(-2i*k*a) * prod((k_n + k) / (k_n - k))
-        S_l_k = np.exp(-2j * k_vec * a)
-
-        # Time delay derivative: d_delta/dk
-        d_delta_dk = -a * np.ones_like(k_vec)
-
-        for k_pole in k_n_aug:
-            # S-matrix product
-            S_l_k = S_l_k * (k_pole + k_vec) / (k_pole - k_vec)
-
-            # Time delay sum term
-            im_k = np.imag(k_pole)
-            re_k = np.real(k_pole)
-            numerator = -im_k * (im_k**2 + k_vec**2 + re_k**2)
-            denominator = (
-                k_vec**4
-                + 2 * k_vec**2 * (im_k - re_k) * (im_k + re_k)
-                + (im_k**2 + re_k**2) ** 2
-            )
-            with np.errstate(divide="ignore", invalid="ignore"):
-                term = numerator / denominator
-                term = np.where(np.isfinite(term), term, 0)
-            d_delta_dk = d_delta_dk + term
-
-        # Cross section: sigma_l = (2l+1) * (pi/k^2) * |1 - S_l|^2
-        with np.errstate(divide="ignore", invalid="ignore"):
-            sigma_l[:, ell] = (
-                (2 * ell + 1) * (np.pi / k_vec**2) * np.abs(1 - S_l_k) ** 2
-            )
-            sigma_l[:, ell] = np.where(np.isfinite(sigma_l[:, ell]), sigma_l[:, ell], 0)
-
-        # Time delay: tau_l = d_delta_dk / k
-        with np.errstate(divide="ignore", invalid="ignore"):
-            tau_l[:, ell] = d_delta_dk / k_vec
-            tau_l[:, ell] = np.where(np.isfinite(tau_l[:, ell]), tau_l[:, ell], 0)
-
-        S_l[:, ell] = S_l_k
+    k_n_list, S_mat, sigma, tau, E_vec_used, alpha = _solve_and_compute(
+        channels, N, a, E_vec_input, dGamma, adaptive_grid, verbose
+    )
 
     return CrossSectionResult(
-        S_l=S_l,
-        sigma_l=sigma_l,
-        tau_l=tau_l,
-        alpha=alpha,
-        k_n_l=k_n_l,
+        S_l=S_mat,
+        sigma_l=sigma,
+        tau_l=tau,
+        k_n_l=k_n_list,
         E_vec=E_vec_used,
         E_vec_input=E_vec_input,
+        l_vec=np.arange(l_max + 1),
+        alpha=alpha,
     )
