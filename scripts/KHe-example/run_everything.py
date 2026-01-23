@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import time
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Callable
 
@@ -114,6 +116,7 @@ def compute_all_identities(
     identities: list[str],
     start_index: int = 0,
     max_identities: int | None = None,
+    max_workers: int | None = None,
 ):
     n = len(identities)
     end_index = n if max_identities is None else min(n, start_index + max_identities)
@@ -147,11 +150,14 @@ def compute_all_identities(
     k_n_l_s: list[list[np.ndarray]] = []
     k_n_l_t: list[list[np.ndarray]] = []
 
+    workers = max_workers if max_workers is not None else (os.cpu_count() or 1)
+
     start_total = time.perf_counter()
     for i in range(start_index, end_index):
         start_identity = time.perf_counter()
         print(
-            f"[{i + 1:02d}/{n}] {identities[i]}: starting SPS solve",
+            f"[{i + 1:02d}/{n}] {identities[i]}: starting SPS solve"
+            f" (parallel, {workers} workers)",
             flush=True,
         )
         rho_spin = all_rho_alpha[:, i] - all_rho_beta[:, i]
@@ -167,6 +173,7 @@ def compute_all_identities(
             l_max,
             e_vec_au,
             adaptive_grid=True,
+            max_workers=max_workers,
         )
         result_t = calc_cross_section(
             f_x_t,
@@ -175,6 +182,7 @@ def compute_all_identities(
             l_max,
             e_vec_au,
             adaptive_grid=True,
+            max_workers=max_workers,
         )
 
         e_vec_s_joule = result_s.E_vec / JOULE_TO_AU
@@ -275,6 +283,12 @@ def main() -> None:
         default=None,
         help="Maximum identities to process in all-identities section",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Number of parallel workers (default: CPU count, use 1 to disable parallelism)",
+    )
     args = parser.parse_args()
 
     sections = set(args.sections)
@@ -297,6 +311,7 @@ def main() -> None:
             identities,
             start_index=args.start_identity,
             max_identities=args.max_identities,
+            max_workers=args.workers,
         )
 
     print(

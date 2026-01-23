@@ -1,10 +1,35 @@
 """Cross section calculation via SPS (ports calc_cross_section_by_SPS.m)."""
 
+from __future__ import annotations
+
+import multiprocessing as mp
+import os
+from concurrent.futures import ProcessPoolExecutor
 from typing import Callable
 
 import numpy as np
 
-from .tise import tise_by_sps
+
+def _solve_single_channel(
+    args: tuple[Callable[[np.ndarray], np.ndarray], int, float, int],
+) -> tuple[int, np.ndarray]:
+    """Worker function for parallel TISE solving."""
+    from .tise import tise_by_sps
+
+    potential_func, N, a, ell = args
+    return (ell, tise_by_sps(potential_func, N, a, ell).k_n)
+
+
+def _compute_s_matrix_single(
+    args: tuple[np.ndarray, np.ndarray, float, int, float],
+) -> tuple[int, np.ndarray, np.ndarray, np.ndarray]:
+    """Worker function for parallel S-matrix computation."""
+    k_vec, k_n, a, ell, dGamma = args
+    k_n_aug = _augment_poles(k_n, dGamma)
+    S, sigma, tau = _compute_s_matrix_from_poles(
+        k_vec, k_n_aug, a, prefactor=2 * ell + 1
+    )
+    return (ell, S, sigma, tau)
 
 
 def _augment_poles(k_n: np.ndarray, dGamma: float) -> np.ndarray:
@@ -61,17 +86,12 @@ def _compute_s_matrix_from_poles(
     tau : np.ndarray
         Time delay, shape (n_E,).
     """
-    # S-matrix: S(k) = exp(-2i*k*a) * prod((k_n + k) / (k_n - k))
     S = np.exp(-2j * k_vec * a)
-
-    # Time delay derivative: d_delta/dk
     d_delta_dk = -a * np.ones_like(k_vec)
 
     for k_pole in k_n:
-        # S-matrix product
         S = S * (k_pole + k_vec) / (k_pole - k_vec)
 
-        # Time delay sum term
         im_k = np.imag(k_pole)
         re_k = np.real(k_pole)
         numerator = -im_k * (im_k**2 + k_vec**2 + re_k**2)
@@ -85,12 +105,10 @@ def _compute_s_matrix_from_poles(
             term = np.where(np.isfinite(term), term, 0)
         d_delta_dk = d_delta_dk + term
 
-    # Cross section: sigma = prefactor * (pi/k^2) * |1 - S|^2
     with np.errstate(divide="ignore", invalid="ignore"):
         sigma = prefactor * (np.pi / k_vec**2) * np.abs(1 - S) ** 2
         sigma = np.where(np.isfinite(sigma), sigma, 0)
 
-    # Time delay: tau = d_delta_dk / k
     with np.errstate(divide="ignore", invalid="ignore"):
         tau = d_delta_dk / k_vec
         tau = np.where(np.isfinite(tau), tau, 0)
@@ -106,56 +124,27 @@ def _solve_and_compute(
     dGamma: float,
     adaptive_grid: bool,
     verbose: bool,
+    max_workers: int | None = None,
 ) -> tuple[list[np.ndarray], np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]:
-    """Core solver: TISE + S-matrix for multiple channels.
-
-    Parameters
-    ----------
-    channels : list of (potential, quantum_number) tuples
-        Each channel has a potential function and its l or Jtag value.
-    N : int
-        Number of basis functions.
-    a : float
-        Cutoff radius.
-    E_vec_input : np.ndarray
-        Input energy grid.
-    dGamma : float
-        Width parameter for pole augmentation.
-    adaptive_grid : bool
-        Whether to refine grid around resonances.
-    verbose : bool
-        Print progress.
-
-    Returns
-    -------
-    k_n_list : list[np.ndarray]
-        Poles for each channel.
-    S : np.ndarray
-        S-matrix, shape (n_E, n_channels).
-    sigma : np.ndarray
-        Cross sections, shape (n_E, n_channels).
-    tau : np.ndarray
-        Time delays, shape (n_E, n_channels).
-    E_vec : np.ndarray
-        Energy grid used (may differ from input if adaptive).
-    alpha : float
-        Scattering length from first channel.
-    """
     n_channels = len(channels)
+    potential = channels[0][0]
+    l_max = n_channels - 1
 
-    # Solve TISE for each channel
-    k_n_list: list[np.ndarray] = []
-    for potential, qn in channels:
-        if verbose:
-            print(f"Solving TISE for qn = {qn}")
-        result = tise_by_sps(potential, N, a, qn)
-        k_n_list.append(result.k_n)
+    workers = max_workers if max_workers is not None else (os.cpu_count() or 1)
 
-    # Scattering length from first channel
+    if verbose:
+        print(f"Solving TISE for l=0..{l_max}")
+
+    channel_args = [(potential, N, a, ell) for ell in range(l_max + 1)]
+    ctx = mp.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=workers, mp_context=ctx) as executor:
+        results = list(executor.map(_solve_single_channel, channel_args))
+    results.sort(key=lambda x: x[0])
+    k_n_list = [k_n for _, k_n in results]
+
     with np.errstate(divide="ignore", invalid="ignore"):
         alpha = np.real(a + np.sum(1j / k_n_list[0]))
 
-    # Build k grid
     k_vec_base = np.sqrt(2 * E_vec_input)
     if adaptive_grid:
         dE = (E_vec_input[-1] - E_vec_input[0]) / max(len(E_vec_input) - 1, 1)
@@ -167,19 +156,24 @@ def _solve_and_compute(
         k_vec = k_vec_base
         E_vec = E_vec_input
 
-    # Compute S-matrix for each channel
+    if verbose:
+        print(f"Computing S-matrices for l=0..{l_max}")
+
     n_E = len(k_vec)
     S = np.zeros((n_E, n_channels), dtype=np.complex128)
     sigma = np.zeros((n_E, n_channels), dtype=np.float64)
     tau = np.zeros((n_E, n_channels), dtype=np.float64)
 
-    for idx, (_, qn) in enumerate(channels):
-        if verbose:
-            print(f"Computing S-matrix for qn = {qn}")
-        k_n_aug = _augment_poles(k_n_list[idx], dGamma)
-        S[:, idx], sigma[:, idx], tau[:, idx] = _compute_s_matrix_from_poles(
-            k_vec, k_n_aug, a, prefactor=2 * qn + 1
-        )
+    s_matrix_args = [
+        (k_vec, k_n_list[ell], a, ell, dGamma) for ell in range(n_channels)
+    ]
+    with ProcessPoolExecutor(max_workers=workers, mp_context=ctx) as executor:
+        s_results = list(executor.map(_compute_s_matrix_single, s_matrix_args))
+    s_results.sort(key=lambda x: x[0])
+    for ell, S_l, sigma_l, tau_l in s_results:
+        S[:, ell] = S_l
+        sigma[:, ell] = sigma_l
+        tau[:, ell] = tau_l
 
     return k_n_list, S, sigma, tau, E_vec, alpha
 
@@ -317,6 +311,7 @@ def calc_cross_section(
     dGamma: float = 0.0,
     verbose: bool = False,
     adaptive_grid: bool = True,
+    max_workers: int | None = None,
 ) -> CrossSectionResult:
     """Compute elastic scattering cross sections using Siegert pseudostates.
 
@@ -344,6 +339,9 @@ def calc_cross_section(
         extra density around narrow resonances. The output E_vec will differ
         from the input. If False, uses the user-provided E_vec exactly, but
         this is NOT RECOMMENDED as it may miss narrow resonance features.
+    max_workers : int | None, default=None
+        Maximum worker processes for parallel execution. None uses all CPUs.
+        Use max_workers=1 to disable parallelism.
 
     Returns
     -------
@@ -354,11 +352,17 @@ def calc_cross_section(
     """
     E_vec_input = np.atleast_1d(np.asarray(E_vec, dtype=np.float64))
 
-    # Build channel list: same potential for all l
     channels = [(f_x, ell) for ell in range(l_max + 1)]
 
     k_n_list, S_mat, sigma, tau, E_vec_used, alpha = _solve_and_compute(
-        channels, N, a, E_vec_input, dGamma, adaptive_grid, verbose
+        channels,
+        N,
+        a,
+        E_vec_input,
+        dGamma,
+        adaptive_grid,
+        verbose,
+        max_workers,
     )
 
     return CrossSectionResult(
