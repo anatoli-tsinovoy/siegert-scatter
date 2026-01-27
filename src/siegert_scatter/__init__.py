@@ -26,7 +26,13 @@ Example
 
 from .bessel_zeros import calc_z_l
 from .cli import main
-from .cross_section import CrossSectionResult, calc_cross_section
+from .cross_section import (
+    CrossSectionResult,
+    augment_poles,
+    calc_cross_section,
+    s_matrix_from_poles,
+    s_matrix_from_poles_all_l,
+)
 from .perturbation import PerturbationResult, calc_perturbation
 from .polynomials import j_polynomial
 from .quadrature import get_gaussian_quadrature
@@ -34,6 +40,7 @@ from .tise import TISEResult, calc_eigenmodes, tise_by_sps
 from .units import reduced_mass, tau_to_dGamma
 
 __all__ = [
+    "augment_poles",
     "calc_cross_section",
     "calc_eigenmodes",
     "calc_perturbation",
@@ -44,6 +51,8 @@ __all__ = [
     "main",
     "PerturbationResult",
     "reduced_mass",
+    "s_matrix_from_poles",
+    "s_matrix_from_poles_all_l",
     "tau_to_dGamma",
     "tise_by_sps",
     "TISEResult",

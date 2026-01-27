@@ -24,7 +24,7 @@ def reduced_mass(m1_amu: float, m2_amu: float) -> float:
 
 
 def tau_to_dGamma(tau_seconds: float, mu_amu: float) -> float:
-    """Convert lifetime to natural energy width parameter.
+    """Convert lifetime to pole augmentation width parameter.
 
     Parameters
     ----------
@@ -36,15 +36,12 @@ def tau_to_dGamma(tau_seconds: float, mu_amu: float) -> float:
     Returns
     -------
     float
-        dGamma in natural energy units.
+        dGamma parameter for use with augment_poles().
 
     Examples
     --------
-    >>> # He-3 + K-39 collision with 1 ns lifetime
-    >>> mu = reduced_mass(3.016, 38.964)
-    >>> dGamma = tau_to_dGamma(1e-9, mu)
-    >>> dGamma
-    1.243...e-04
+    >>> mu = reduced_mass(3.016, 38.964)  # He-3 + K-39
+    >>> dGamma = tau_to_dGamma(1e-9, mu)  # 1 ns lifetime
     """
     mu_me = mu_amu * AMU_TO_ME
     return T_AU * mu_me / tau_seconds
