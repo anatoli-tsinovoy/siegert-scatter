@@ -5,34 +5,45 @@ from __future__ import annotations
 import multiprocessing as mp
 import os
 from concurrent.futures import ProcessPoolExecutor
-from typing import Callable
+from typing import Callable, NamedTuple
 
 import numpy as np
 
 
-def _solve_single_channel(
-    args: tuple[Callable[[np.ndarray], np.ndarray], int, float, int],
-) -> tuple[int, np.ndarray]:
+class _TISEArgs(NamedTuple):
+    potential_func: Callable[[np.ndarray], np.ndarray]
+    N: int
+    a: float
+    ell: int
+
+
+class _SMatrixArgs(NamedTuple):
+    k_vec: np.ndarray
+    k_n: np.ndarray
+    a: float
+    ell: int
+    dGamma: float
+
+
+def _solve_single_channel(args: _TISEArgs) -> tuple[int, np.ndarray]:
     """Worker function for parallel TISE solving."""
     from .tise import tise_by_sps
 
-    potential_func, N, a, ell = args
-    return (ell, tise_by_sps(potential_func, N, a, ell).k_n)
+    return (args.ell, tise_by_sps(args.potential_func, args.N, args.a, args.ell).k_n)
 
 
 def _compute_s_matrix_single(
-    args: tuple[np.ndarray, np.ndarray, float, int, float],
+    args: _SMatrixArgs,
 ) -> tuple[int, np.ndarray, np.ndarray, np.ndarray]:
     """Worker function for parallel S-matrix computation."""
-    k_vec, k_n, a, ell, dGamma = args
-    k_n_aug = _augment_poles(k_n, dGamma)
-    S, sigma, tau = _compute_s_matrix_from_poles(
-        k_vec, k_n_aug, a, prefactor=2 * ell + 1
+    k_n_aug = augment_poles(args.k_n, args.dGamma)
+    S, sigma, tau = _compute_s_matrix_from_poles_full(
+        args.k_vec, k_n_aug, args.a, prefactor=2 * args.ell + 1
     )
-    return (ell, S, sigma, tau)
+    return (args.ell, S, sigma, tau)
 
 
-def _augment_poles(k_n: np.ndarray, dGamma: float) -> np.ndarray:
+def augment_poles(k_n: np.ndarray, dGamma: float) -> np.ndarray:
     """Augment scattering poles with decay width.
 
     k_n_aug = Re(k_n) + i*(Im(k_n) - dGamma/|k_n|)  for scattering poles only.
@@ -58,34 +69,77 @@ def _augment_poles(k_n: np.ndarray, dGamma: float) -> np.ndarray:
     return np.real(k_n) + 1j * (np.imag(k_n) - im_shift)
 
 
-def _compute_s_matrix_from_poles(
+def s_matrix_from_poles(
+    k_vec: np.ndarray,
+    k_n: np.ndarray,
+    a: float,
+) -> np.ndarray:
+    """Compute S-matrix from Siegert poles via product formula.
+
+    S_l(k) = exp(-2i*k*a) * prod_n (k_n + k)/(k_n - k)
+
+    Parameters
+    ----------
+    k_vec : np.ndarray
+        Wavenumber grid, shape (n_k,).
+    k_n : np.ndarray
+        Pole positions (possibly augmented with decay width).
+    a : float
+        Cutoff radius.
+
+    Returns
+    -------
+    np.ndarray
+        S-matrix values, shape (n_k,).
+    """
+    S = np.exp(-2j * k_vec * a)
+    for k_pole in k_n:
+        S = S * (k_pole + k_vec) / (k_pole - k_vec)
+    return S
+
+
+def s_matrix_from_poles_all_l(
+    k_n_l: list[np.ndarray],
+    k_vec: np.ndarray,
+    a: float,
+    dGamma: float = 0.0,
+) -> np.ndarray:
+    """Compute S-matrix for all angular momenta from stored poles.
+
+    Augments poles with dGamma and computes S_l(k) for each l.
+
+    Parameters
+    ----------
+    k_n_l : list[np.ndarray]
+        Poles for each angular momentum, from CrossSectionResult.k_n_l.
+    k_vec : np.ndarray
+        Wavenumber grid, shape (n_k,).
+    a : float
+        Cutoff radius.
+    dGamma : float, default=0.0
+        Width parameter for pole augmentation.
+
+    Returns
+    -------
+    np.ndarray
+        S-matrix, shape (n_k, n_l).
+    """
+    n_l = len(k_n_l)
+    n_k = len(k_vec)
+    S_l = np.zeros((n_k, n_l), dtype=np.complex128)
+    for ell, k_n in enumerate(k_n_l):
+        k_n_aug = augment_poles(k_n, dGamma)
+        S_l[:, ell] = s_matrix_from_poles(k_vec, k_n_aug, a)
+    return S_l
+
+
+def _compute_s_matrix_from_poles_full(
     k_vec: np.ndarray,
     k_n: np.ndarray,
     a: float,
     prefactor: float,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Compute S-matrix, cross section, and time delay from poles.
-
-    Parameters
-    ----------
-    k_vec : np.ndarray
-        Wavenumber grid, shape (n_E,).
-    k_n : np.ndarray
-        Pole positions (possibly augmented with decay width).
-    a : float
-        Cutoff radius.
-    prefactor : float
-        Degeneracy factor: (2*l+1) or (2*Jtag+1).
-
-    Returns
-    -------
-    S : np.ndarray
-        S-matrix values, shape (n_E,).
-    sigma : np.ndarray
-        Cross section, shape (n_E,).
-    tau : np.ndarray
-        Time delay, shape (n_E,).
-    """
+    """Internal: compute S-matrix, cross section, and time delay from poles."""
     S = np.exp(-2j * k_vec * a)
     d_delta_dk = -a * np.ones_like(k_vec)
 
@@ -135,7 +189,7 @@ def _solve_and_compute(
     if verbose:
         print(f"Solving TISE for l=0..{l_max}")
 
-    channel_args = [(potential, N, a, ell) for ell in range(l_max + 1)]
+    channel_args = [_TISEArgs(potential, N, a, ell) for ell in range(l_max + 1)]
     ctx = mp.get_context("spawn")
     with ProcessPoolExecutor(max_workers=workers, mp_context=ctx) as executor:
         results = list(executor.map(_solve_single_channel, channel_args))
@@ -165,7 +219,7 @@ def _solve_and_compute(
     tau = np.zeros((n_E, n_channels), dtype=np.float64)
 
     s_matrix_args = [
-        (k_vec, k_n_list[ell], a, ell, dGamma) for ell in range(n_channels)
+        _SMatrixArgs(k_vec, k_n_list[ell], a, ell, dGamma) for ell in range(n_channels)
     ]
     with ProcessPoolExecutor(max_workers=workers, mp_context=ctx) as executor:
         s_results = list(executor.map(_compute_s_matrix_single, s_matrix_args))

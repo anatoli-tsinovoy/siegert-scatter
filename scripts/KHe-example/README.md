@@ -10,9 +10,12 @@ python run_everything.py electron-structure-outputs.json
 
 ### Options
 
-- `--sections`: Which SPS sections to run (default: `all-identities`)
 - `--start-identity`: Zero-based start index for processing identities (default: 0)
 - `--max-identities`: Maximum number of identities to process (default: all)
+- `--identities`: Specific identities to calculate, separated by '+' (e.g., '5s' or '4s+5s')
+- `--workers`: Number of parallel workers (default: CPU count)
+- `--decay-times`: External decay times in seconds, comma-separated (e.g., '1e-12,1e-11,1e-10,1e-9')
+- `--output`: Path to save results as a pickle file (e.g., 'results.pkl')
 
 ### Example
 
