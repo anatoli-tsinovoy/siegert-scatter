@@ -330,12 +330,16 @@ def _build_resonant_k_grid(
                     min_val = re_k - 3 * width
                     far_min_val = re_k - 10 * width
                     super_far_min_val = re_k - 100 * width
+                    ultra_far_min_val = re_k - 1000 * width
 
                     max_val = re_k + 3 * width
                     far_max_val = re_k + 10 * width
                     super_far_max_val = re_k + 100 * width
                     ultra_far_max_val = re_k + 1000 * width
 
+                    k_points.extend(
+                        np.linspace(ultra_far_min_val, super_far_min_val, 19)
+                    )
                     k_points.extend(np.linspace(super_far_min_val, far_min_val, 19))
                     k_points.extend(np.linspace(far_min_val, min_val, 19))
                     k_points.extend(np.linspace(min_val, max_val, 19))
