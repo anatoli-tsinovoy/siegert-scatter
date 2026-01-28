@@ -117,6 +117,7 @@ def compute_all_identities(
     indices_to_compute: list[int] | None = None,
     decay_times: list[float] | None = None,
     max_workers: int | None = None,
+    verbose: bool = False,
 ):
     """Compute SPS cross-sections for specified identities.
 
@@ -138,6 +139,8 @@ def compute_all_identities(
         External decay times in seconds. If None or empty, uses dGamma=0.
     max_workers : int | None
         Number of parallel workers.
+    verbose : bool
+        Enable verbose output from cross-section calculations.
     """
     n = len(identities)
     if indices_to_compute is None:
@@ -197,6 +200,7 @@ def compute_all_identities(
             l_max,
             e_vec_au,
             dGamma=0.0,
+            verbose=verbose,
             adaptive_grid=True,
             max_workers=max_workers,
         )
@@ -210,6 +214,7 @@ def compute_all_identities(
             l_max,
             e_vec_au,
             dGamma=0.0,
+            verbose=verbose,
             adaptive_grid=True,
             max_workers=max_workers,
         )
@@ -380,6 +385,11 @@ def main() -> None:
         default=None,
         help="Path to save results as a pickle file (e.g., 'results.pkl')",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output from cross-section calculations",
+    )
     args = parser.parse_args()
 
     data = ElectronStructureOutputs.from_json_file(args.input)
@@ -420,6 +430,7 @@ def main() -> None:
         indices_to_compute=indices_to_compute,
         decay_times=decay_times,
         max_workers=args.workers,
+        verbose=args.verbose,
     )
 
     if args.output is not None:
